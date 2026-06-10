@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>透明物理幕布·手势交互</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #000;
+  touch-action: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#canvas-container {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+}
+canvas { display: block; touch-action: none; }
+#ui-layer {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+#ui-layer > * { pointer-events: auto; }
+#start-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.92);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 100; color: #fff;
+  transition: opacity 0.6s;
+}
+#start-overlay.hidden { opacity: 0; pointer-events: none; }
+#start-btn {
+  margin-top: 24px; padding: 14px 40px;
+  font-size: 18px; border: 2px solid #fff;
+  background: transparent; color: #fff;
+  border-radius: 30px; cursor: pointer;
+  transition: all 0.3s;
+}
+#start-btn:hover { background: #fff; color: #000; }
+#top-right-controls {
+  position: fixed; top: 16px; right: 16px;
+  display: flex; gap: 8px; z-index: 20;
+}
+#bottom-right-controls {
+  position: fixed; bottom: 16px; right: 16px;
+  display: flex; flex-direction: column;
+  align-items: flex-end; gap: 10px; z-index: 20;
+}
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(0,0,0,0.5); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 20px;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.2); }
+#media-input { display: none; }
+.control-group {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(0,0,0,0.5);
+  padding: 8px 14px; border-radius: 22px;
+  backdrop-filter: blur(8px);
+  color: #fff; font-size: 13px;
+}
+#zoom-slider { width: 100px; }
+#status-text {
+  position: fixed; bottom: 16px; left: 16px;
+  color: rgba(255,255,255,0.7); font-size: 12px;
+  z-index: 20; pointer-events: none;
+}
+#debug-info {
+  position: fixed; top: 70px; right: 16px;
+  color: #0f0; font-size: 11px;
+  font-family: monospace; z-index: 20;
+  pointer-events: none; text-align: right; line-height: 1.5;
+}
+</style>
+</head>
+<body>
+
+<div id="canvas-container"><canvas id="main-canvas"></canvas></div>
+
+<div id="start-overlay">
+  <h1 style="font-size:28px;font-weight:300;letter-spacing:2px;">透明物理幕布</h1>
+  <p style="margin-top:12px;color:rgba(255,255,255,0.6);font-size:14px;">手势交互 · 揭开隐藏的画面</p>
+  <p id="loading-status" style="margin-top:8px;color:rgba(255,255,255,0.4);font-size:12px;">正在加载手势模型...</p>
+  <button id="start-btn" style="display:none;">Start</button>
+</div>
+
+<div id="ui-layer">
+  <div id="top-right-controls">
+    <button class="icon-btn" id="eye-btn" title="切换UI">👁</button>
+  </div>
+  <div id="bottom-right-controls">
+    <button class="icon-btn" id="upload-btn" title="上传图片/视频">📁</button>
+    <button class="icon-btn" id="flip-btn" title="翻转摄像头">🔄</button>
+    <div class="control-group">
+      <span>缩放</span>
+      <input type="range" id="zoom-slider" min="0.5" max="2.0" step="0.01" value="1.0">
+    </div>
+  </div>
+</div>
+
+<input type="file" id="media-input" accept="image/*,video/*">
+
+<div id="status-text">等待启动...</div>
+<div id="debug-info"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// ==================== Perlin Noise ====================
+const PERLIN = (function(){
+  const p = new Uint8Array(512);
+  const perm = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+  for(let i=0;i<256;i++) p[i]=p[i+256]=perm[i];
+  function fade(t){return t*t*t*(t*(t*6-15)+10);}
+  function lerp(t,a,b){return a+t*(b-a);}
+  function grad(h,x,y){const u=(h&1)?-x:x; const v=(h&2)?-y:y; return u+v;}
+  return {
+    noise2D(x,y){
+      const X=Math.floor(x)&255, Y=Math.floor(y)&255;
+      x-=Math.floor(x); y-=Math.floor(y);
+      const u=fade(x), v=fade(y);
+      const A=p[X]+Y, AA=p[A], AB=p[A+1], B=p[X+1]+Y, BA=p[B], BB=p[B+1];
+      return lerp(v,lerp(u,grad(p[AA],x,y),grad(p[BA],x-1,y)),
+                     lerp(u,grad(p[AB],x,y-1),grad(p[BB],x-1,y-1)));
+    }
+  };
+})();
+
+// ==================== 全局配置 ====================
+const CFG = {
+  GW: 38, GH: 35,
+  FRICTION: 0.94, GRAVITY: 0.08,
+  ITER: 16, STIFF: 0.6,
+  RESTORE_FLY: 0.02, RESTORE_FALL: 0.0011,
+  PINCH_ON: 0.08, PINCH_OFF: 0.14,
+  GRAB_R: 220, HAND_R: 350,
+  WIND_SCL: 0.003, WIND_SPD: 0.001,
+  CMP_A: 120, STR_A: 60,
+  EIN_A: 30, EOUT_A: 180,
+  EIN_W: 4, EOUT_W: 1.5, EOUT_BLUR: 12,
+  MAX_W: 0.85, MAX_H: 0.55,
+  PREWARM: 60
+};
+
+// ==================== 状态 ====================
+let canvas, ctx, W, H;
+let videoEl = null, camStream = null, faceMode = 'user';
+let mediaEl = null, mediaType = null, mediaAsp = 16/9;
+let pts = [], sts = [];
+let clothW, clothH, clothX, clothY;
+let ptInit = [], stInit = [];
+let state = 'resting'; // resting held flying falling
+let grabIdx = null, grabOffX = 0, grabOffY = 0;
+let lastVY = 0;
+let hands = null, hResults = null, hLoaded = false;
+let camRunning = false, started = false;
+let frmCnt = 0, dbgMode = 0, uiVis = true, zoom = 1, t = 0;
+let mDown = false, mX = -1e4, mY = -1e4;
+let handPos = null;
+
+// ==================== DOM ====================
+const $ = id => document.getElementById(id);
+const setStatus = s => { $('status-text').textContent = s; console.log('[Status]', s); };
+
+// ==================== Canvas ====================
+function initCanvas() {
+  canvas = $('main-canvas');
+  ctx = canvas.getContext('2d');
+  onResize();
+  window.addEventListener('resize', () => { onResize(); rebuildCloth(); });
+}
+function onResize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+}
+
+// ==================== Cloth ====================
+function rebuildCloth() {
+  pts = []; sts = []; ptInit = []; stInit = [];
+  const maxW = W * CFG.MAX_W, maxH = H * CFG.MAX_H;
+  let w = maxW, h = maxH;
+  if (w / h > mediaAsp) w = h * mediaAsp; else h = w / mediaAsp;
+  clothW = w; clothH = h;
+  clothX = (W - w) / 2; clothY = H * 0.12;
+  const sx = w / CFG.GW, sy = h / CFG.GH;
+
+  for (let y = 0; y <= CFG.GH; y++) {
+    for (let x = 0; x <= CFG.GW; x++) {
+      const px = clothX + x * sx, py = clothY + y * sy;
+      const ox = (Math.random() - 0.5) * 16;
+      const oy = -10 + Math.random() * 12;
+      pts.push({ x: px+ox, y: py+oy, ox: px+ox, oy: py+oy, px: px, py: py, pin: y===0 });
+      ptInit.push({x: px+ox, y: py+oy});
+    }
+  }
+  for (let y = 0; y <= CFG.GH; y++) {
+    for (let x = 0; x <= CFG.GW; x++) {
+      const i = y * (CFG.GW+1) + x;
+      if (x < CFG.GW) { const j=i+1, l=Math.hypot(pts[j].x-pts[i].x, pts[j].y-pts[i].y); sts.push({a:i,b:j,l}); stInit.push(l); }
+      if (y < CFG.GH) { const j=i+(CFG.GW+1), l=Math.hypot(pts[j].x-pts[i].x, pts[j].y-pts[i].y); sts.push({a:i,b:j,l}); stInit.push(l); }
+    }
+  }
+  state = 'resting'; grabIdx = null; frmCnt = 0;
+}
+
+// ==================== Physics ====================
+function updatePhys() {
+  // Verlet integration
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (p.pin && grabIdx !== i) continue;
+    if (grabIdx === i) continue;
+    const vx = (p.x - p.ox) * CFG.FRICTION;
+    const vy = (p.y - p.oy) * CFG.FRICTION;
+    p.ox = p.x; p.oy = p.y;
+    p.x += vx; p.y += vy;
+    p.y += CFG.GRAVITY;
+    const n = PERLIN.noise2D(p.x * CFG.WIND_SCL + t * CFG.WIND_SPD, p.y * CFG.WIND_SCL);
+    p.x += n * 0.25; p.y += n * 0.12;
+  }
+
+  // Restore forces
+  if (state === 'flying') {
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]; if (p.pin) continue;
+      p.x += (ptInit[i].x - p.x) * CFG.RESTORE_FLY;
+      p.y += (ptInit[i].y - p.y) * CFG.RESTORE_FLY;
+    }
+  } else if (state === 'falling' || state === 'resting') {
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]; if (p.pin) continue;
+      p.x += (ptInit[i].x - p.x) * CFG.RESTORE_FALL;
+      p.y += (ptInit[i].y - p.y) * CFG.RESTORE_FALL;
+    }
+  }
+
+  // Constraints
+  for (let iter = 0; iter < CFG.ITER; iter++) {
+    for (const s of sts) {
+      const p0 = pts[s.a], p1 = pts[s.b];
+      const dx = p1.x - p0.x, dy = p1.y - p0.y;
+      const d = Math.hypot(dx, dy) || 1e-6;
+      const diff = s.l - d;
+      const pc = (diff / d) * 0.5 * CFG.STIFF;
+      const ox = dx * pc, oy = dy * pc;
+      const g0 = grabIdx === s.a, g1 = grabIdx === s.b;
+      if (!p0.pin && !g0) { p0.x -= ox; p0.y -= oy; }
+      if (!p1.pin && !g1) { p1.x += ox; p1.y += oy; }
+    }
+    // Pin top row
+    for (let i = 0; i <= CFG.GW; i++) {
+      if (grabIdx === i) continue;
+      const p = pts[i];
+      p.x = ptInit[i].x; p.y = ptInit[i].y;
+      p.ox = p.x; p.oy = p.y;
+    }
+  }
+
+  // Grab follow
+  if (grabIdx !== null && handPos) {
+    const p = pts[grabIdx];
+    lastVY = p.y - p.oy;
+    p.x = handPos.x + grabOffX;
+    p.y = handPos.y + grabOffY;
+    p.ox = p.x; p.oy = p.y;
+  }
+}
+
+// ==================== MediaPipe ====================
+function initMP() {
+  if (typeof window.Hands === 'undefined') {
+    setStatus('MediaPipe 加载失败，仅使用鼠标/触摸');
+    hLoaded = false; return;
+  }
+  hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
+  hands.setOptions({maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+  hands.onResults(onHands);
+  hLoaded = true;
+  setStatus('手势模型加载完成');
+}
+function onHands(results) { hResults = results; }
+
+function processHands() {
+  if (!hResults || !hResults.multiHandLandmarks || !hResults.multiHandLandmarks.length) {
+    if (!mDown && grabIdx !== null) releaseCloth();
+    return;
+  }
+  let best = null, bestSc = -1e9, bestPos = null;
+  for (const lm of hResults.multiHandLandmarks) {
+    const th = lm[4], id = lm[8];
+    const dist = Math.hypot(th.x - id.x, th.y - id.y);
+    let pinching = dist < CFG.PINCH_ON;
+    if (!pinching && grabIdx !== null && dist < CFG.PINCH_OFF) pinching = true;
+    if (!pinching) continue;
+    const mx = (1 - (th.x + id.x) / 2) * W;
+    const my = ((th.y + id.y) / 2) * H;
+    let sc = 0;
+    if (handPos) {
+      const d = Math.hypot(mx - handPos.x, my - handPos.y);
+      if (d < CFG.HAND_R) sc = 10000 - d;
+    } else { sc = 1000; }
+    if (sc > bestSc) { bestSc = sc; best = lm; bestPos = {x: mx, y: my}; }
+  }
+  if (bestPos) {
+    handPos = bestPos;
+    if (grabIdx === null) tryGrab(bestPos.x, bestPos.y);
+  } else {
+    if (grabIdx !== null && !mDown) releaseCloth();
+    if (grabIdx === null) handPos = null;
+  }
+}
+
+// ==================== Grab / Release ====================
+function tryGrab(x, y) {
+  let ci = -1, cd = 1e9;
+  for (let i = 0; i < pts.length; i++) {
+    const d = Math.hypot(pts[i].x - x, pts[i].y - y);
+    if (d < cd) { cd = d; ci = i; }
+  }
+  if (ci >= 0 && cd < CFG.GRAB_R) {
+    grabIdx = ci;
+    grabOffX = pts[ci].x - x;
+    grabOffY = pts[ci].y - y;
+    state = 'held';
+    setStatus(`已抓住布料 #${ci}`);
+  }
+}
+function releaseCloth() {
+  if (grabIdx === null) return;
+  const vy = lastVY;
+  if (state === 'held') {
+    if (vy < -15) { state = 'flying'; setStatus('布料飞起'); }
+    else if (vy > 15) { state = 'falling'; setStatus('布料落下'); }
+    else { state = 'resting'; setStatus('布料静止'); }
+  }
+  grabIdx = null; lastVY = 0;
+}
+
+// ==================== Camera ====================
+async function startCam() {
+  try {
+    if (camStream) camStream.getTracks().forEach(tr => tr.stop());
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: faceMode, width: {ideal: 1280}, height: {ideal: 720} }
+    });
+    camStream = stream;
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = true;
+    }
+    videoEl.srcObject = stream;
+    await new Promise((res, rej) => {
+      videoEl.onloadedmetadata = () => res();
+      videoEl.onerror = rej;
+      setTimeout(() => rej(new Error('超时')), 10000);
+    });
+    await videoEl.play();
+    camRunning = true;
+    setStatus('摄像头已启动');
+    if (hLoaded && hands) mpLoop();
+  } catch (e) {
+    console.error(e);
+    setStatus('摄像头失败: ' + e.message);
+    camRunning = false;
+  }
+}
+function flipCam() { faceMode = faceMode === 'user' ? 'environment' : 'user'; startCam(); }
+async function mpLoop() {
+  if (!camRunning || !hands) return;
+  if (videoEl && videoEl.readyState >= 2) {
+    try { await hands.send({image: videoEl}); } catch(e){}
+  }
+  requestAnimationFrame(mpLoop);
+}
+
+// ==================== Media Upload ====================
+function onUpload(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  if (file.type.startsWith('video/')) {
+    const v = document.createElement('video');
+    v.src = url; v.muted = true; v.loop = true; v.playsInline = true;
+    v.onloadeddata = () => {
+      mediaEl = v; mediaType = 'video';
+      mediaAsp = v.videoWidth / v.videoHeight;
+      v.play(); rebuildCloth();
+      setStatus('视频已加载');
+    };
+    v.onerror = () => setStatus('视频加载失败');
+  } else {
+    const img = new Image();
+    img.onload = () => {
+      mediaEl = img; mediaType = 'image';
+      mediaAsp = img.width / img.height;
+      rebuildCloth();
+      setStatus('图片已加载');
+    };
+    img.onerror = () => setStatus('图片加载失败');
+    img.src = url;
+  }
+}
+
+// ==================== Rendering ====================
+function drawCam(dx, dy, dw, dh) {
+  if (!videoEl || videoEl.readyState < 2) return;
+  const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+  if (!vw || !vh) return;
+  if (dx === undefined) {
+    const sc = Math.max(W / vw, H / vh);
+    const ddw = vw * sc, ddh = vh * sc;
+    ctx.drawImage(videoEl, (W - ddw)/2, (H - ddh)/2, ddw, ddh);
+  } else {
+    ctx.drawImage(videoEl, dx, dy, dw, dh);
+  }
+}
+
+function draw() {
+  if (!ctx) return;
+  ctx.clearRect(0, 0, W, H);
+
+  if (!started || !camRunning) {
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#555'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('点击 Start 启动摄像头', W/2, H/2 - 10);
+    if (!mediaEl) { ctx.fillStyle = '#444'; ctx.font = '13px sans-serif'; ctx.fillText('请上传图片或视频以显示在幕布背后', W/2, H/2 + 20); }
+    drawDbg(); return;
+  }
+
+  ctx.save();
+  const cx = W/2, cy = H/2;
+  ctx.translate(cx, cy); ctx.scale(zoom, zoom); ctx.translate(-cx, -cy);
+
+  // Layer 0: 底层全屏摄像头
+  drawCam();
+  if (dbgMode === 2) { ctx.restore(); drawDbg(); return; }
+
+  // Layer 1: 中层媒体（固定在初始矩形位置）
+  if (mediaEl && dbgMode !== 2) {
+    if (mediaType === 'video') ctx.drawImage(mediaEl, clothX, clothY, clothW, clothH);
+    else ctx.drawImage(mediaEl, clothX, clothY, clothW, clothH);
+  }
+  if (dbgMode === 1) { ctx.restore(); drawDbg(); return; }
+
+  // Layer 2: 顶层 - 布的轮廓 clip + 摄像头 + 质感
+  ctx.save();
+  buildContourPath();
+  ctx.clip();
+  drawCam();
+
+  if (dbgMode !== 3) {
+    renderFabricQuality();
+    renderEdges();
+  }
+
+  if (dbgMode === 3) {
+    ctx.strokeStyle = '#0f0'; ctx.lineWidth = 0.8;
+    for (const s of sts) { ctx.beginPath(); ctx.moveTo(pts[s.a].x, pts[s.a].y); ctx.lineTo(pts[s.b].x, pts[s.b].y); ctx.stroke(); }
+    for (const p of pts) { ctx.fillStyle = p.pin ? '#f00' : '#0f0'; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill(); }
+  }
+
+  ctx.restore(); // end clip
+  ctx.restore(); // end zoom
+
+  // 手势/鼠标光标视觉反馈
+  if (handPos) {
+    ctx.save();
+    const grabbing = grabIdx !== null;
+    const x = handPos.x, y = handPos.y;
+    const pulse = (Math.sin(t * 0.08) + 1) / 2;
+
+    if (!grabbing) {
+      // 优雅对焦框 - 呼吸涟漪
+      const rBase = 22, rOuter = rBase + pulse * 10;
+      ctx.shadowColor = 'rgba(255,215,120,0.35)';
+      ctx.shadowBlur = 18;
+      // 外圈呼吸
+      ctx.strokeStyle = `rgba(255,215,120,${0.35 + pulse * 0.25})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(x, y, rOuter, 0, Math.PI*2); ctx.stroke();
+      // 内圈
+      ctx.strokeStyle = 'rgba(255,235,180,0.75)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, rBase, 0, Math.PI*2); ctx.stroke();
+      // 四角小刻度
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.2;
+      const tick = 5, gap = rBase - 2;
+      ctx.beginPath();
+      ctx.moveTo(x - gap, y - gap + tick); ctx.lineTo(x - gap, y - gap);
+      ctx.lineTo(x - gap + tick, y - gap);
+      ctx.moveTo(x + gap - tick, y - gap); ctx.lineTo(x + gap, y - gap);
+      ctx.lineTo(x + gap, y - gap + tick);
+      ctx.moveTo(x + gap, y + gap - tick); ctx.lineTo(x + gap, y + gap);
+      ctx.lineTo(x + gap - tick, y + gap);
+      ctx.moveTo(x - gap + tick, y + gap); ctx.lineTo(x - gap, y + gap);
+      ctx.lineTo(x - gap, y + gap - tick);
+      ctx.stroke();
+      // 中心点
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI*2); ctx.fill();
+    } else {
+      // 抓住状态 - 抓握星光
+      const r = 26;
+      ctx.shadowColor = 'rgba(0,255,200,0.5)';
+      ctx.shadowBlur = 22;
+      // 填充盘
+      ctx.fillStyle = 'rgba(0,255,200,0.10)';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+      // 外圈
+      ctx.strokeStyle = 'rgba(0,255,200,0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
+      // 四条抓握射线
+      ctx.strokeStyle = 'rgba(0,255,200,0.65)';
+      ctx.lineWidth = 1.8;
+      const ray = 11;
+      ctx.beginPath();
+      for (let a = 0; a < 4; a++) {
+        const ang = a * Math.PI / 2;
+        ctx.moveTo(x + Math.cos(ang) * 9, y + Math.sin(ang) * 9);
+        ctx.lineTo(x + Math.cos(ang) * ray, y + Math.sin(ang) * ray);
+      }
+      ctx.stroke();
+      // 中心亮核
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawDbg();
+}
+
+function buildContourPath() {
+  ctx.beginPath();
+  for (let x = 0; x <= CFG.GW; x++) { const p = pts[x]; if (x===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+  for (let y = 1; y <= CFG.GH; y++) { const p = pts[y*(CFG.GW+1)+CFG.GW]; ctx.lineTo(p.x,p.y); }
+  for (let x = CFG.GW-1; x >= 0; x--) { const p = pts[CFG.GH*(CFG.GW+1)+x]; ctx.lineTo(p.x,p.y); }
+  for (let y = CFG.GH-1; y >= 1; y--) { const p = pts[y*(CFG.GW+1)]; ctx.lineTo(p.x,p.y); }
+  ctx.closePath();
+}
+
+function renderFabricQuality() {
+  // 计算每个点的局部平均边长变化率
+  const deform = [];
+  for (let i = 0; i < pts.length; i++) deform.push({sum:0, cnt:0});
+  for (const s of sts) {
+    const cur = Math.hypot(pts[s.b].x - pts[s.a].x, pts[s.b].y - pts[s.a].y);
+    const ratio = cur / s.l;
+    deform[s.a].sum += ratio; deform[s.a].cnt++;
+    deform[s.b].sum += ratio; deform[s.b].cnt++;
+  }
+
+  const spacing = (clothW / CFG.GW + clothH / CFG.GH) / 2;
+  const radius = spacing * 2.0;
+
+  // 阴影层 - 模糊圆叠加，无拼接边界
+  ctx.save();
+  ctx.filter = 'blur(6px)';
+  for (let i = 0; i < pts.length; i++) {
+    const d = deform[i];
+    if (d.cnt === 0) continue;
+    const avg = d.sum / d.cnt;
+    if (avg < 0.94) {
+      const a = Math.min(0.30, (0.94 - avg) * 1.5);
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // 高光层
+  ctx.save();
+  ctx.filter = 'blur(6px)';
+  for (let i = 0; i < pts.length; i++) {
+    const d = deform[i];
+    if (d.cnt === 0) continue;
+    const avg = d.sum / d.cnt;
+    if (avg > 1.06) {
+      const a = Math.min(0.18, (avg - 1.06) * 1.0);
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function renderEdges() {
+  // outer white glow
+  ctx.save();
+  buildContourPath();
+  ctx.shadowColor = 'rgba(255,255,255,0.6)';
+  ctx.shadowBlur = CFG.EOUT_BLUR;
+  ctx.strokeStyle = `rgba(255,255,255,${CFG.EOUT_A/255})`;
+  ctx.lineWidth = CFG.EOUT_W;
+  ctx.stroke();
+  ctx.restore();
+  // inner black
+  ctx.save();
+  buildContourPath();
+  ctx.strokeStyle = `rgba(0,0,0,${CFG.EIN_A/255})`;
+  ctx.lineWidth = CFG.EIN_W;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDbg() {
+  const arr = [
+    `State: ${state}`,
+    `Grab: ${grabIdx!==null?'#'+grabIdx:'none'}`,
+    `Hands: ${hLoaded?(hResults?.multiHandLandmarks?.length||0)+' hand(s)':'N/A'}`,
+    `Camera: ${camRunning?'OK':'OFF'}`,
+    `Media: ${mediaType||'none'}`,
+    `Debug(D): ${['Normal','MediaLayer','CameraLayer','Wireframe'][dbgMode]}`,
+    `Points: ${pts.length}`
+  ];
+  $('debug-info').textContent = arr.join('\n');
+}
+
+// ==================== Events ====================
+function bindEvents() {
+  $('start-btn').addEventListener('click', async () => {
+    $('start-overlay').classList.add('hidden');
+    started = true; setStatus('正在启动摄像头...');
+    await startCam();
+  });
+  $('upload-btn').addEventListener('click', () => $('media-input').click());
+  $('media-input').addEventListener('change', e => { if (e.target.files[0]) onUpload(e.target.files[0]); });
+  $('flip-btn').addEventListener('click', flipCam);
+  $('zoom-slider').addEventListener('input', e => { zoom = parseFloat(e.target.value); });
+  $('eye-btn').addEventListener('click', () => {
+    uiVis = !uiVis;
+    $('bottom-right-controls').style.display = uiVis ? 'flex' : 'none';
+    $('top-right-controls').style.display = uiVis ? 'flex' : 'none';
+  });
+
+  // Mouse
+  canvas.addEventListener('mousedown', e => {
+    const r = canvas.getBoundingClientRect();
+    mX = e.clientX - r.left; mY = e.clientY - r.top; mDown = true;
+    handPos = {x: mX, y: mY}; tryGrab(mX, mY);
+  });
+  window.addEventListener('mousemove', e => {
+    if (!mDown) return;
+    const r = canvas.getBoundingClientRect();
+    mX = e.clientX - r.left; mY = e.clientY - r.top; handPos = {x: mX, y: mY};
+  });
+  window.addEventListener('mouseup', () => {
+    mDown = false;
+    if (grabIdx !== null) releaseCloth();
+    if (!hResults?.multiHandLandmarks?.length) handPos = null;
+  });
+
+  // Touch
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length) {
+      const r = canvas.getBoundingClientRect();
+      mX = e.touches[0].clientX - r.left; mY = e.touches[0].clientY - r.top;
+      mDown = true; handPos = {x: mX, y: mY}; tryGrab(mX, mY);
+    }
+  }, {passive: false});
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (mDown && e.touches.length) {
+      const r = canvas.getBoundingClientRect();
+      mX = e.touches[0].clientX - r.left; mY = e.touches[0].clientY - r.top;
+      handPos = {x: mX, y: mY};
+    }
+  }, {passive: false});
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault(); mDown = false;
+    if (grabIdx !== null) releaseCloth();
+    if (!hResults?.multiHandLandmarks?.length) handPos = null;
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'd' || e.key === 'D') {
+      dbgMode = (dbgMode + 1) % 4;
+      setStatus('Debug: ' + ['Normal','MediaLayer','CameraLayer','Wireframe'][dbgMode]);
+    }
+  });
+}
+
+// ==================== Loop ====================
+function loop() {
+  t++;
+  if (started) {
+    if (frmCnt < CFG.PREWARM) {
+      for (let i = 0; i < 4; i++) updatePhys();
+      frmCnt++;
+      if (frmCnt === CFG.PREWARM) setStatus('物理系统已稳定');
+    } else {
+      updatePhys();
+    }
+    processHands();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ==================== Init ====================
+function init() {
+  initCanvas();
+  rebuildCloth();
+  bindEvents();
+  initMP();
+  // 静默预稳定布料，防止初始跳动/消失
+  for (let i = 0; i < CFG.PREWARM; i++) updatePhys();
+  $('start-btn').style.display = 'inline-block';
+  $('loading-status').textContent = '点击 Start 开始体验';
+  setStatus('就绪');
+  loop();
+}
+
+init();
+</script>
+</body>
+</html>
