@@ -149,7 +149,7 @@ const CFG = {
   CMP_A: 120, STR_A: 60,
   EIN_A: 12, EOUT_A: 35,
   EIN_W: 1.2, EOUT_W: 0.6, EOUT_BLUR: 0,
-  MAX_W: 0.85, MAX_H: 0.55,
+  MAX_W: 1.0, MAX_H: 0.92,
   PREWARM: 60
 };
 
@@ -192,7 +192,7 @@ function rebuildCloth() {
   let w = maxW, h = maxH;
   if (w / h > mediaAsp) w = h * mediaAsp; else h = w / mediaAsp;
   clothW = w; clothH = h;
-  clothX = (W - w) / 2; clothY = H * 0.12;
+  clothX = (W - w) / 2; clothY = (H - h) / 2;
   const sx = w / CFG.GW, sy = h / CFG.GH;
 
   for (let y = 0; y <= CFG.GH; y++) {
