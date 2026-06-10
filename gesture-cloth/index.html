@@ -147,8 +147,8 @@ const CFG = {
   GRAB_R: 220, HAND_R: 350,
   WIND_SCL: 0.003, WIND_SPD: 0.001,
   CMP_A: 120, STR_A: 60,
-  EIN_A: 30, EOUT_A: 140,
-  EIN_W: 3, EOUT_W: 1, EOUT_BLUR: 0,
+  EIN_A: 12, EOUT_A: 35,
+  EIN_W: 1.2, EOUT_W: 0.6, EOUT_BLUR: 0,
   MAX_W: 0.85, MAX_H: 0.55,
   PREWARM: 60
 };
@@ -619,6 +619,8 @@ function renderEdges() {
   // outer white glow
   ctx.save();
   buildContourPath();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   ctx.shadowColor = 'rgba(255,255,255,0.6)';
   ctx.shadowBlur = CFG.EOUT_BLUR;
   ctx.strokeStyle = `rgba(255,255,255,${CFG.EOUT_A/255})`;
@@ -628,6 +630,8 @@ function renderEdges() {
   // inner black
   ctx.save();
   buildContourPath();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
   ctx.strokeStyle = `rgba(0,0,0,${CFG.EIN_A/255})`;
   ctx.lineWidth = CFG.EIN_W;
   ctx.stroke();
