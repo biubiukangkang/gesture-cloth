@@ -147,8 +147,8 @@ const CFG = {
   GRAB_R: 220, HAND_R: 350,
   WIND_SCL: 0.003, WIND_SPD: 0.001,
   CMP_A: 120, STR_A: 60,
-  EIN_A: 30, EOUT_A: 180,
-  EIN_W: 4, EOUT_W: 1.5, EOUT_BLUR: 4,
+  EIN_A: 30, EOUT_A: 140,
+  EIN_W: 3, EOUT_W: 1, EOUT_BLUR: 0,
   MAX_W: 0.85, MAX_H: 0.55,
   PREWARM: 60
 };
@@ -585,41 +585,35 @@ function renderFabricQuality() {
   }
 
   const spacing = (clothW / CFG.GW + clothH / CFG.GH) / 2;
-  const radius = spacing * 2.0;
+  const radius = spacing * 0.5;
 
-  // 阴影层 - 模糊圆叠加，无拼接边界
-  ctx.save();
-  ctx.filter = 'blur(2px)';
+  // 阴影层 - 清晰微点，无 blur
   for (let i = 0; i < pts.length; i++) {
     const d = deform[i];
     if (d.cnt === 0) continue;
     const avg = d.sum / d.cnt;
     if (avg < 0.94) {
-      const a = Math.min(0.30, (0.94 - avg) * 1.5);
+      const a = Math.min(0.18, (0.94 - avg) * 1.0);
       ctx.fillStyle = `rgba(0,0,0,${a})`;
       ctx.beginPath();
       ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI*2);
       ctx.fill();
     }
   }
-  ctx.restore();
 
   // 高光层
-  ctx.save();
-  ctx.filter = 'blur(2px)';
   for (let i = 0; i < pts.length; i++) {
     const d = deform[i];
     if (d.cnt === 0) continue;
     const avg = d.sum / d.cnt;
     if (avg > 1.06) {
-      const a = Math.min(0.18, (avg - 1.06) * 1.0);
+      const a = Math.min(0.12, (avg - 1.06) * 0.7);
       ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.beginPath();
       ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI*2);
       ctx.fill();
     }
   }
-  ctx.restore();
 }
 
 function renderEdges() {
