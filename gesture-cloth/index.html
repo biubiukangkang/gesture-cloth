@@ -446,10 +446,15 @@ function draw() {
   drawCam();
   if (dbgMode === 2) { ctx.restore(); drawDbg(); return; }
 
-  // Layer 1: 中层媒体（固定在初始矩形位置）
+  // Layer 1: 中层媒体（固定大小，不随布料放大）
   if (mediaEl && dbgMode !== 2) {
-    if (mediaType === 'video') ctx.drawImage(mediaEl, clothX, clothY, clothW, clothH);
-    else ctx.drawImage(mediaEl, clothX, clothY, clothW, clothH);
+    const maxMW = W * 0.55, maxMH = H * 0.5;
+    let mw = maxMW, mh = maxMH;
+    if (mw / mh > mediaAsp) mw = mh * mediaAsp;
+    else mh = mw / mediaAsp;
+    const mx = (W - mw) / 2, my = (H - mh) / 2;
+    if (mediaType === 'video') ctx.drawImage(mediaEl, mx, my, mw, mh);
+    else ctx.drawImage(mediaEl, mx, my, mw, mh);
   }
   if (dbgMode === 1) { ctx.restore(); drawDbg(); return; }
 
