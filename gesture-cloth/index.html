@@ -142,7 +142,7 @@ const CFG = {
   GW: 38, GH: 35,
   FRICTION: 0.94, GRAVITY: 0.08,
   ITER: 16, STIFF: 0.6,
-  RESTORE_FLY: 0.02, RESTORE_FALL: 0.0011,
+  RESTORE_FLY: 0, RESTORE_FALL: 0,
   PINCH_ON: 0.08, PINCH_OFF: 0.14,
   GRAB_R: 220, HAND_R: 350,
   WIND_SCL: 0.003, WIND_SPD: 0.001,
@@ -200,7 +200,8 @@ function rebuildCloth() {
       const px = clothX + x * sx, py = clothY + y * sy;
       const ox = (Math.random() - 0.5) * 16;
       const oy = -10 + Math.random() * 12;
-      pts.push({ x: px+ox, y: py+oy, ox: px+ox, oy: py+oy, px: px, py: py, pin: y===0 });
+      const isCorner = (y === 0 && (x === 0 || x === CFG.GW));
+      pts.push({ x: px+ox, y: py+oy, ox: px+ox, oy: py+oy, px: px, py: py, pin: isCorner });
       ptInit.push({x: px+ox, y: py+oy});
     }
   }
